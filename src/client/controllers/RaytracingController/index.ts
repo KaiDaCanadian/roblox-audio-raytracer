@@ -181,7 +181,7 @@ export class RaytracingController implements OnStart, OnRender
 		this.AudioEmitterPool.forEach(({ Direction: direction }, index) =>
 		{
 			this.scheduler.ScheduleWork({
-				cameraCFrame: camera_part.CFrame,
+				cameraCFrame: camera_part.CFrame.mul(new CFrame(direction.mul(5))),
 				direction: direction,
 				emitter: index,
 

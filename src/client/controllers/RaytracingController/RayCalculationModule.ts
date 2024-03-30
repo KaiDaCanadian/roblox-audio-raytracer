@@ -87,6 +87,23 @@ const Raytrace = (options: AudioRaytraceParams): [RaytracePathPoint[], RaytraceR
     return [path, undefined];
 }
 
+// const DebugLine = (position1: Vector3, position2: Vector3, color: Color3, transparency: number = 0): void =>
+// {
+//     task.synchronize();
+//     const length = position1.sub(position2).Magnitude;
+
+//     const line = new Instance("Part", Workspace.Debug);
+//     line.Anchored = true;
+//     line.CanCollide = false;
+//     line.CanTouch = false;
+//     line.CanQuery = false;
+//     line.Size = new Vector3(0.05, 0.05, length);
+//     line.CFrame = CFrame.lookAt(position1, position2).mul(new CFrame(0, 0, -length / 2));
+//     line.Color = color;
+//     line.Transparency = transparency;
+//     task.desynchronize();
+// }
+
 export = (options: AudioRaytraceParams): AudioRaytraceResult => {
     const [points, info] = Raytrace(options);
 
@@ -98,19 +115,6 @@ export = (options: AudioRaytraceParams): AudioRaytraceResult => {
             audioSource: undefined
         };
     };
-
-    // for (let i = 0; i < points.size() - 1; ++i)
-    // {
-    // 	const point1 = points[i]!;
-    // 	const point2 = points[i + 1]!;
-
-    // 	this.DebugLine(
-    // 		point1,
-    // 		point2,
-    // 		Color3.fromHSV(i / points.size(), 1, 1),
-    // 		0
-    // 	);
-    // }
 
     const total_distance = points.reduce(
         (total, point, index) =>
@@ -124,12 +128,27 @@ export = (options: AudioRaytraceParams): AudioRaytraceResult => {
 
     const distance_factor = math.max((total_distance / 300) ** 2, 0.5);
 
-    return {
+    const data = {
         faderVolume: (info.DotProduct) * (0.75 ** info.TotalBounces) / distance_factor * (1 / NUM_AUDIO_DIRECTIONS),
         lowGain: -info.TotalBounces * 10,
-        midGain: info.Obstructed ? -20 : 0,
-        highGain: info.Obstructed ? -80 : -info.TotalBounces * 10,
+        midGain: info.Obstructed ? -20 : -info.TotalBounces * 5,
+        highGain: info.Obstructed ? -80 : 0,
         emitter: options.emitter,
         audioSource: info.AudioSource
     };
+
+    // for (let i = 0; i < points.size() - 1; ++i)
+    //     {
+    //         const point1 = points[i]!;
+    //         const point2 = points[i + 1]!;
+    
+    //         DebugLine(
+    //             point1,
+    //             point2,
+    //             Color3.fromHSV(i / points.size(), 1, 1),
+    //             0
+    //         );
+    //     }
+
+    return data;
 }
