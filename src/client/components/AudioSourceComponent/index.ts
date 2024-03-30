@@ -1,5 +1,6 @@
 import { BaseComponent, Component } from "@flamework/components";
 import { OnStart } from "@flamework/core";
+import { HttpService } from "@rbxts/services";
 import { Tags } from "client/types";
 
 interface AudioSourceComponentAttributes
@@ -24,6 +25,8 @@ type AudioSourceComponentInstance = BasePart & {
 @Component({ tag: Tags.AudioSourceComponent })
 export class AudioSourceComponent extends BaseComponent<AudioSourceComponentAttributes, AudioSourceComponentInstance> implements OnStart
 {
+	public readonly emitter_id: string = HttpService.GenerateGUID(false);
+
 	public SetAssetId(newAssetId: string): void
 	{
 		this.instance.AudioPlayer.AssetId = newAssetId;

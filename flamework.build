@@ -2,8 +2,8 @@
 	"version": 1,
 	"flameworkVersion": "1.2.1",
 	"identifiers": {
-		"audio-raytracer:out/client/controllers/AudioController/init@AudioController": "client/controllers/AudioController/init@AudioController",
 		"audio-raytracer:out/client/components/AudioSourceComponent/init@AudioSourceComponent": "client/components/AudioSourceComponent/init@AudioSourceComponent",
+		"audio-raytracer:out/client/controllers/AudioController/init@AudioController": "client/controllers/AudioController/init@AudioController",
 		"audio-raytracer:out/client/controllers/RaytracingController/init@RaytracingController": "client/controllers/RaytracingController/init@RaytracingController"
 	},
 	"metadata": {}
