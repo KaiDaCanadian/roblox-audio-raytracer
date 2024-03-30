@@ -36,7 +36,7 @@ interface RaytraceResult
 
 const IsAudioEmitterInstance = Flamework.createGuard<AudioEmitterInstance>();
 
-const RAYTRACE_LENGTH = 400;
+const RAYTRACE_LENGTH = 1000;
 const RAYTRACE_MAX_BOUNCE_COUNT = 3;
 const NUM_DIRECTIONS = 500;
 const RAYTRACE_SNAP_ANGLE = math.rad(30);
