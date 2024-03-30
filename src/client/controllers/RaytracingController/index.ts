@@ -285,29 +285,16 @@ export class RaytracingController implements OnStart, OnRender
 
 		camera_part.CFrame = new CFrame(camera.CFrame.Position);
 
-		const emitter_usage_count = new Map<AudioSourceComponent, number>();
-
-		const results = this.AudioEmitterPool.map(({ Direction: direction, Emitter: emitter }) =>
+		for (const { Direction: direction, Emitter: emitter } of this.AudioEmitterPool)
 		{
 			const [points, info] = this.Raytrace(camera_part.CFrame.Position, camera_part.CFrame.VectorToWorldSpace(direction));
-			return [points, info, emitter] as const;
-		});
 
-		results.forEach(([_, info]) =>
-		{
-			if (!info) return;
-			const count = emitter_usage_count.get(info.AudioSource) ?? 0;
-			emitter_usage_count.set(info.AudioSource, count + 1);
-		});
-
-		results.forEach(([points, info, emitter]) =>
-		{
 			if (!info)
 			{
 				emitter.AudioFader.Volume = 0;
 				emitter.AudioEqualizer.Wire.SourceInstance = undefined;
 				// emitter.Visible = false;
-				return;
+				continue;
 			};
 
 			// for (let i = 0; i < points.size() - 1; ++i)
@@ -342,6 +329,6 @@ export class RaytracingController implements OnStart, OnRender
 			emitter.AudioEqualizer.HighGain = info.Obstructed ? -80 : -info.TotalBounces * 10;
 			emitter.AudioEqualizer.Wire.SourceInstance = info.AudioSource.instance.AudioFader;
 			// emitter.Visible = true;
-		});
+		}
 	}
 }
