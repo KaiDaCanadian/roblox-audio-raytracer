@@ -5,4 +5,4 @@ export const RAYTRACE_SNAP_ANGLE = math.rad(30);
 export const DISTANCE_FROM_CAMERA = 5;
 
 export const RAYTRACE_THREAD_COUNT = 24;
-export const RAYTRACE_COUNT_PER_WORKER = 20;
+export const RAYTRACE_COUNT_PER_WORKER = 100;

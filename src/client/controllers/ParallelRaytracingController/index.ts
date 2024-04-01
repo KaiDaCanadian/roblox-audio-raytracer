@@ -1,6 +1,7 @@
 import { Controller, Flamework, OnStart } from "@flamework/core";
-import { AudioRaytraceParams, AudioRaytraceResult, WorkerActorInstance } from "./types";
+import { AudioRaytraceParams, AudioRaytraceResult, AudioSource, WorkerActorInstance } from "./types";
 import { RAYTRACE_THREAD_COUNT } from "shared/config/AudioRaytraceConfig";
+import { DecodeAudioRaytraceResultBuffer, EncodeAudioRaytraceParamsBuffer } from "./bufferutil";
 
 const IsWorkerActorInstance = Flamework.createGuard<WorkerActorInstance>();
 
@@ -11,9 +12,9 @@ export class ParallelRaytracingController implements OnStart
 
 	public Workers: WorkerActorInstance[] = [];
 
-	public async Raytrace(workerIndex: number, params: AudioRaytraceParams[]): Promise<AudioRaytraceResult[]>
+	public async Raytrace(workerIndex: number, audioSources: AudioSource[], raycastParams: RaycastParams, params: AudioRaytraceParams[]): Promise<AudioRaytraceResult[]>
 	{
-		return new Promise((resolve, reject, onCancel) =>
+		return new Promise<AudioRaytraceResult[]>((resolve, reject, onCancel) =>
 		{
 			const connections: RBXScriptConnection[] = [];
 
@@ -32,7 +33,7 @@ export class ParallelRaytracingController implements OnStart
 			connections.push(worker.OnWorkComplete.Event.Connect(result =>
 			{
 				cleanup();
-				resolve(result);
+				resolve(DecodeAudioRaytraceResultBuffer(result));
 			}));
 
 			connections.push(worker.OnWorkErrored.Event.Connect(err =>
@@ -46,7 +47,9 @@ export class ParallelRaytracingController implements OnStart
 				cleanup();
 			});
 
-			worker.OnWorkStarted.Fire(params);
+			const buf = EncodeAudioRaytraceParamsBuffer(audioSources, params);
+
+			worker.OnWorkStarted.Fire(buf, raycastParams);
 		});
 	}
 

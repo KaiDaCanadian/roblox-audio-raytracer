@@ -1,11 +1,8 @@
-import { AudioSourceComponentInstance } from "client/components/AudioSourceComponent/types";
-import { AudioEmitterInstance } from "../RaytracingController/types";
-
 export type WorkerActorInstance = Actor & {
 	worker: BaseScript;
-	OnWorkStarted: BindableEvent<(params: AudioRaytraceParams[]) => void>;
+	OnWorkStarted: BindableEvent<(buf: buffer, params: RaycastParams) => void>;
 	OnWorkErrored: BindableEvent<(err: unknown) => void>;
-	OnWorkComplete: BindableEvent<(results: AudioRaytraceResult[]) => void>;
+	OnWorkComplete: BindableEvent<(buf: buffer) => void>;
 };
 
 export interface AudioRaytracePathPoint
@@ -14,13 +11,13 @@ export interface AudioRaytracePathPoint
 	Direction: Vector3;
 }
 
+export type AudioSource = readonly [Vector3, number];
+
 export interface AudioRaytraceParams
 {
-	StartingCFrame: CFrame;
+	StartingPosition: Vector3;
 	StartingDirection: Vector3;
-	Emitter: AudioEmitterInstance;
-	AudioSources: AudioSourceComponentInstance[];
-	RaycastParams: RaycastParams | undefined;
+	EmitterIndex: number;
 };
 
 export type AudioRaytraceResult = {
@@ -29,12 +26,8 @@ export type AudioRaytraceResult = {
 	DotProduct: number;
 	Occluded: boolean;
 
-	SelectedAudioSource: AudioSourceComponentInstance | undefined;
-	Emitter: AudioEmitterInstance;
+	SelectedAudioSourceIndex: number | undefined;
+	EmitterIndex: number;
 
-	ElapsedTime: number;
-} | {
-	SelectedAudioSource: undefined;
-	Emitter: AudioEmitterInstance;
 	ElapsedTime: number;
 };

@@ -13,10 +13,15 @@ const IsAudioEmitterInstance = Flamework.createGuard<AudioEmitterInstance>();
 @Controller()
 export class RaytracingController implements OnStart, OnRender
 {
-	public AudioSources = new Set<AudioSourceComponent>();
+	public AudioSources: AudioSourceComponent[] = [];
 	public CurrentCamera = Workspace.CurrentCamera;
 
 	public Directions = this.GetDirections(NUM_AUDIO_DIRECTIONS);
+
+	public IndexEmitterMap = new Map<number, DirectionAndEmitter>();
+	public EmitterIndexMap = new Map<DirectionAndEmitter, number>();
+
+	public AudioSourceIndexMap = new Map<number, AudioSourceComponent>();
 
 	public AudioEmitterPool: DirectionAndEmitter[] = [];
 
@@ -35,19 +40,24 @@ export class RaytracingController implements OnStart, OnRender
 
 	public AddAudioSource(component: AudioSourceComponent): void
 	{
-		this.AudioSources.add(component);
+		if (this.AudioSources.includes(component)) return;
+
+		const len = this.AudioSources.push(component);
+		this.AudioSourceIndexMap.set(len - 1, component);
 	}
 
 	public RemoveAudioSource(component: AudioSourceComponent): void
 	{
-		this.AudioSources.delete(component);
+		this.AudioSources.filter(source => source !== component);
+
+		// rebuild AudioSourceIndexMap... this is inefficient, but it's not a big deal, hopefully
+		this.AudioSourceIndexMap.clear();
+		this.AudioSources.forEach((source, index) => this.AudioSourceIndexMap.set(index, source));
 	}
 
-	public GetAudioSources(): AudioSourceComponent[]
+	public GetAudioSourcesImmutableCopy(): AudioSourceComponent[]
 	{
-		const sources: AudioSourceComponent[] = [];
-		this.AudioSources.forEach(source => sources.push(source));
-		return sources;
+		return [...this.AudioSources];
 	}
 
 	public GetDirections(numPoints: number): Vector3[]
@@ -128,14 +138,22 @@ export class RaytracingController implements OnStart, OnRender
 
 	public onStart(): void
 	{
-		this.Directions.forEach(direction =>
+		this.Directions.forEach((direction, index) =>
 		{
 			const emitter = this.CreateAudioEmitter();
 
 			emitter.CFrame = new CFrame(direction.mul(DISTANCE_FROM_CAMERA));
 			emitter.Parent = this.CameraAttachmentPart;
 
-			this.AudioEmitterPool.push({ Direction: direction, Emitter: emitter });
+			const direction_and_emitter: DirectionAndEmitter = {
+				Direction: direction,
+				Emitter: emitter
+			};
+
+			this.AudioEmitterPool.push(direction_and_emitter);
+
+			this.IndexEmitterMap.set(index, direction_and_emitter);
+			this.EmitterIndexMap.set(direction_and_emitter, index);
 		});
 
 		this.SplitAudioEmitterPool = split_arr(split_arr(this.AudioEmitterPool, RAYTRACE_COUNT_PER_WORKER), RAYTRACE_THREAD_COUNT);
@@ -176,7 +194,7 @@ export class RaytracingController implements OnStart, OnRender
 
 		const camera_part = this.CameraAttachmentPart;
 		camera_part.CFrame = new CFrame(camera.CFrame.Position);
-		const camera_part_cframe = camera_part.CFrame;
+		const camera_part_position = camera_part.Position;
 
 		if (this.Busy)
 		{
@@ -189,9 +207,10 @@ export class RaytracingController implements OnStart, OnRender
 
 		Workspace.Debug.ClearAllChildren();
 
-		const sources = this.GetAudioSources()
-			.filter(component => component.attributes.RaytracingEnabled)
-			.map(component => component.instance);
+		const sources = this.AudioSources
+			.map((component, index) => [component, index] as const)
+			.filter(([component]) => component.attributes.RaytracingEnabled)
+			.map(([component, index]) => [component.instance.Position, index] as const);
 
 		const all_results: AudioRaytraceResult[] = table.create(NUM_AUDIO_DIRECTIONS);
 		const times: number[] = [];
@@ -201,13 +220,13 @@ export class RaytracingController implements OnStart, OnRender
 			const split_jobs = iteration.map(
 				(directions, index) => this.parallelRaytracingController.Raytrace(
 					index,
-					directions.map(({ Direction: direction, Emitter: emitter }) =>
+					sources,
+					this.RaycastParams,
+					directions.map(direction_and_emitter =>
 					({
-						StartingCFrame: camera_part_cframe,
-						StartingDirection: direction,
-						Emitter: emitter,
-						AudioSources: sources,
-						RaycastParams: this.RaycastParams
+						StartingPosition: camera_part_position,
+						StartingDirection: direction_and_emitter.Direction,
+						EmitterIndex: this.EmitterIndexMap.get(direction_and_emitter)!,
 					}))
 				)
 					.then(results =>
@@ -225,15 +244,27 @@ export class RaytracingController implements OnStart, OnRender
 
 		for (const result of all_results)
 		{
-			const emitter = result.Emitter;
+			const emitter = this.IndexEmitterMap.get(result.EmitterIndex)?.Emitter;
 
-			if (!result.SelectedAudioSource)
+			if (!emitter)
+			{
+				throw "Emitter not found!";
+			}
+
+			if (result.SelectedAudioSourceIndex === undefined)
 			{
 				emitter.AudioFader.Volume = 0;
 				emitter.AudioEqualizer.Wire.SourceInstance = undefined;
 				// emitter.Visible = false;
 
 				continue;
+			}
+
+			const audio_source = this.AudioSourceIndexMap.get(result.SelectedAudioSourceIndex);
+
+			if (!audio_source)
+			{
+				throw "Audio source not found!";
 			}
 
 			const total_distance = result.PathPoints.reduce(
@@ -246,7 +277,6 @@ export class RaytracingController implements OnStart, OnRender
 				0
 			);
 
-			const audio_source = result.SelectedAudioSource;
 			const distance_factor = math.max((total_distance / 300) ** 2, 0.5);
 
 			emitter.AudioFader.Volume = (result.DotProduct) * (0.75 ** result.TotalBounces) / (distance_factor) / (NUM_AUDIO_DIRECTIONS);
@@ -255,7 +285,7 @@ export class RaytracingController implements OnStart, OnRender
 			emitter.AudioEqualizer.MidGain = result.Occluded ? -20 : -result.TotalBounces * 5;
 			emitter.AudioEqualizer.HighGain = result.Occluded ? -80 : 0;
 
-			emitter.AudioEqualizer.Wire.SourceInstance = audio_source.AudioFader;
+			emitter.AudioEqualizer.Wire.SourceInstance = audio_source.instance.AudioFader;
 
 			// emitter.Visible = true;
 		}

@@ -1,6 +1,7 @@
-import { AudioRaytraceParams, AudioRaytraceResult, WorkerActorInstance } from "../types";
+import { AudioRaytraceParams, AudioRaytraceResult, AudioSource, WorkerActorInstance } from "../types";
 import { DISTANCE_FROM_CAMERA, RAYTRACE_LENGTH, RAYTRACE_MAX_BOUNCE_COUNT, RAYTRACE_SNAP_ANGLE } from "shared/config/AudioRaytraceConfig";
 import { Workspace } from "@rbxts/services";
+import { DecodeAudioRaytraceParamsBuffer, EncodeAudioRaytraceResultBuffer, u16_max } from "../bufferutil";
 
 const ACTOR = <WorkerActorInstance> script.GetActor();
 
@@ -19,42 +20,29 @@ const AreObstructionsBetween = (from: Vector3, to: Vector3, raycastParams?: Rayc
 	return false;
 };
 
-function Raytrace(options: AudioRaytraceParams): AudioRaytraceResult
+function Raytrace(options: AudioRaytraceParams, audioSources: AudioSource[], raycastParams: RaycastParams): AudioRaytraceResult
 {
 	const start = tick();
 
-	const result = Workspace.Raycast(
-		options.StartingCFrame.Position,
-		options.StartingDirection.mul(DISTANCE_FROM_CAMERA),
-		options.RaycastParams
-	);
-
-	const emitter_position = result?.Position.add(result.Normal.mul(0.1))
-		?? options.StartingCFrame.mul(new CFrame(options.StartingDirection.mul(DISTANCE_FROM_CAMERA))).Position;
-
-	// const startingPosition = options.StartingCFrame.mul(new CFrame(options.StartingDirection.mul(DISTANCE_FROM_CAMERA))).Position;
-	const startingPosition = emitter_position;
-	const startingDirection = options.StartingCFrame.VectorToWorldSpace(options.StartingDirection);
-
 	const path = table.create<Vector3>(RAYTRACE_MAX_BOUNCE_COUNT + 1);
 
-	path.push(startingPosition);
+	let current_position = options.StartingPosition.add(options.StartingDirection.mul(DISTANCE_FROM_CAMERA));
+	let current_direction = options.StartingDirection.Unit;
 
-	let current_position = startingPosition;
-	let current_direction = startingDirection.Unit;
+	path.push(current_position);
 
 	for (let i = 0; i < RAYTRACE_MAX_BOUNCE_COUNT; ++i)
 	{
-		const result = Workspace.Raycast(current_position, current_direction.mul(RAYTRACE_LENGTH), options.RaycastParams);
+		const result = Workspace.Raycast(current_position, current_direction.mul(RAYTRACE_LENGTH), raycastParams);
 		const hit_position = result?.Position ?? current_position.add(current_direction.mul(RAYTRACE_LENGTH));
 
 		// get audio sources, sort by distance
-		const components = options.AudioSources
-			.sort((a, b) => a.Position.sub(current_position).Magnitude < b.Position.sub(current_position).Magnitude);
+		const components = [...audioSources]
+			.sort((a, b) => a[0].sub(current_position).Magnitude < b[0].sub(current_position).Magnitude);
 
 		for (const component of components)
 		{
-			const component_position = component.Position;
+			const component_position = component[0];
 
 			// If the direction is within the snap angle, then we can hear the audio source
 			const direction_to_source = DirectionFromTo(current_position, component_position);
@@ -63,13 +51,13 @@ function Raytrace(options: AudioRaytraceParams): AudioRaytraceResult
 			{
 				path.push(component_position);
 
-				const is_obstructed = AreObstructionsBetween(current_position, component_position, options.RaycastParams);
+				const is_obstructed = AreObstructionsBetween(current_position, component_position, raycastParams);
 				const dot_product = current_direction.Dot(direction_to_source);
 
 				return {
 					PathPoints: path,
-					Emitter: options.Emitter,
-					SelectedAudioSource: component,
+					EmitterIndex: options.EmitterIndex,
+					SelectedAudioSourceIndex: component[1],
 					DotProduct: dot_product,
 					Occluded: is_obstructed,
 					TotalBounces: i,
@@ -83,8 +71,12 @@ function Raytrace(options: AudioRaytraceParams): AudioRaytraceResult
 			path.push(hit_position);
 
 			return {
-				Emitter: options.Emitter,
-				SelectedAudioSource: undefined,
+				PathPoints: path,
+				EmitterIndex: options.EmitterIndex,
+				SelectedAudioSourceIndex: u16_max,
+				DotProduct: 0,
+				Occluded: false,
+				TotalBounces: i,
 				ElapsedTime: tick() - start,
 			};
 		}
@@ -98,22 +90,22 @@ function Raytrace(options: AudioRaytraceParams): AudioRaytraceResult
 	}
 
 	return {
-		Emitter: options.Emitter,
-		SelectedAudioSource: undefined,
+		PathPoints: path,
+		EmitterIndex: options.EmitterIndex,
+		SelectedAudioSourceIndex: u16_max,
+		DotProduct: 0,
+		Occluded: false,
+		TotalBounces: RAYTRACE_MAX_BOUNCE_COUNT,
 		ElapsedTime: tick() - start,
 	};
 }
 
-// ACTOR.BindToMessageParallel("OnWorkStarted", (params: AudioRaytraceParams[]) =>
-// {
-// 	const results = params.map(params => Raytrace(params));
-
-// 	ACTOR.OnWorkComplete.Fire(results);
-// });
-
-ACTOR.OnWorkStarted.Event.ConnectParallel((params: AudioRaytraceParams[]) =>
+ACTOR.OnWorkStarted.Event.ConnectParallel((buf: buffer, raycastParams: RaycastParams) =>
 {
-	const results = params.map(params => Raytrace(params));
+	const [audio_sources, params] = DecodeAudioRaytraceParamsBuffer(buf);
 
-	ACTOR.OnWorkComplete.Fire(results);
+	const results = params.map(param => Raytrace(param, audio_sources, raycastParams));
+	const results_buffer = EncodeAudioRaytraceResultBuffer(results);
+
+	ACTOR.OnWorkComplete.Fire(results_buffer);
 });
