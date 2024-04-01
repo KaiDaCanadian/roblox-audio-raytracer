@@ -1,47 +1,46 @@
-import { Components } from "@flamework/components";
 import { Controller, Flamework, OnRender, OnStart } from "@flamework/core";
-
-import { HttpService, Workspace } from "@rbxts/services";
+import { AudioEmitterInstance, DirectionAndEmitter } from "./types";
 import { AudioSourceComponent } from "client/components/AudioSourceComponent";
-import * as constants from "shared/config/AudioRaytraceConfig";
-import { AudioEmitterInstance, AudioRaytraceParams, AudioRaytraceResult, DirectionAndEmitter } from "client/controllers/RaytracingController/types";
-
-import ParallelScheduler from "shared/parallel/ParallelScheduler";
+import { Players, Workspace } from "@rbxts/services";
+import { DISTANCE_FROM_CAMERA, NUM_AUDIO_DIRECTIONS, RAYTRACE_COUNT_PER_WORKER, RAYTRACE_THREAD_COUNT } from "shared/config/AudioRaytraceConfig";
+import { Components } from "@flamework/components";
+import { ParallelRaytracingController } from "../ParallelRaytracingController";
+import { AudioRaytraceResult } from "../ParallelRaytracingController/types";
+import { split_arr } from "shared/util";
 
 const IsAudioEmitterInstance = Flamework.createGuard<AudioEmitterInstance>();
-
-const WORKER_MODULE = script.WaitForChild("RayCalculationModule");
-if (!WORKER_MODULE || !WORKER_MODULE.IsA("ModuleScript"))
-{
-	throw "Failed to find RayCalculationModule";
-}
 
 @Controller()
 export class RaytracingController implements OnStart, OnRender
 {
-	public AudioSources = new Map<string, AudioSourceComponent>();
+	public AudioSources = new Set<AudioSourceComponent>();
 	public CurrentCamera = Workspace.CurrentCamera;
 
-	public AudioEmitterPool: Map<string, DirectionAndEmitter> = new Map();
+	public Directions = this.GetDirections(NUM_AUDIO_DIRECTIONS);
 
-	public Directions = this.GetDirections(constants.NUM_AUDIO_DIRECTIONS);
+	public AudioEmitterPool: DirectionAndEmitter[] = [];
+
+	/**
+	 * `DirectionAndEmitter[ITERATION][NUM_THREADS][NUM_RAYCASTS_PER_THREAD]`
+	 */
+	public SplitAudioEmitterPool: DirectionAndEmitter[][][] = [];
 
 	public CameraAttachmentPart = new Instance("Part");
-
-	private scheduler = ParallelScheduler.LoadModule(WORKER_MODULE as ModuleScript)
+	public RaycastParams = new RaycastParams();
 
 	public constructor(
-		private components: Components
+		private components: Components,
+		private parallelRaytracingController: ParallelRaytracingController
 	) { }
 
 	public AddAudioSource(component: AudioSourceComponent): void
 	{
-		this.AudioSources.set(component.emitter_id, component);
+		this.AudioSources.add(component);
 	}
 
 	public RemoveAudioSource(component: AudioSourceComponent): void
 	{
-		this.AudioSources.delete(component.emitter_id);
+		this.AudioSources.delete(component);
 	}
 
 	public GetAudioSources(): AudioSourceComponent[]
@@ -133,15 +132,13 @@ export class RaytracingController implements OnStart, OnRender
 		{
 			const emitter = this.CreateAudioEmitter();
 
-			emitter.CFrame = new CFrame(direction.mul(5));
+			emitter.CFrame = new CFrame(direction.mul(DISTANCE_FROM_CAMERA));
 			emitter.Parent = this.CameraAttachmentPart;
-			// emitter.Parent = Workspace.WaitForChild("Test", math.huge) as Part;
 
-			this.AudioEmitterPool.set(HttpService.GenerateGUID(false), {
-				Direction: direction,
-				Emitter: emitter
-			});
+			this.AudioEmitterPool.push({ Direction: direction, Emitter: emitter });
 		});
+
+		this.SplitAudioEmitterPool = split_arr(split_arr(this.AudioEmitterPool, RAYTRACE_COUNT_PER_WORKER), RAYTRACE_THREAD_COUNT);
 
 		this.CameraAttachmentPart.Transparency = 1;
 		this.CameraAttachmentPart.CanCollide = false;
@@ -159,64 +156,122 @@ export class RaytracingController implements OnStart, OnRender
 			this.CurrentCamera = Workspace.CurrentCamera;
 			this.CameraAttachmentPart.Parent = this.CurrentCamera;
 		});
+
+		this.RaycastParams.FilterType = Enum.RaycastFilterType.Exclude;
+
+		if (Players.LocalPlayer.Character)
+		{
+			this.RaycastParams.FilterDescendantsInstances = [Players.LocalPlayer.Character];
+		}
+
+		Players.LocalPlayer.CharacterAdded.Connect(character => this.RaycastParams.FilterDescendantsInstances = [character]);
 	}
 
-	public onRender(): void
+	public Busy = false;
+
+	public async onRender(): Promise<void>
 	{
-		if (this.scheduler.GetStatus().IsWorking) return;
-
-		Workspace.Debug.ClearAllChildren();
-
 		const camera = this.CurrentCamera;
 		if (!camera) return;
 
-		// const camera_part = Workspace.WaitForChild("Test", math.huge) as Part;
 		const camera_part = this.CameraAttachmentPart;
-
 		camera_part.CFrame = new CFrame(camera.CFrame.Position);
+		const camera_part_cframe = camera_part.CFrame;
+
+		if (this.Busy)
+		{
+			return;
+		}
+
+		this.Busy = true;
+
+		// print("updated");
+
+		Workspace.Debug.ClearAllChildren();
 
 		const sources = this.GetAudioSources()
-			.filter(component => component.attributes.RaytracingEnabled);
+			.filter(component => component.attributes.RaytracingEnabled)
+			.map(component => component.instance);
 
-		this.AudioEmitterPool.forEach(({ Direction: direction }, index) =>
+		const all_results: AudioRaytraceResult[] = table.create(NUM_AUDIO_DIRECTIONS);
+		const times: number[] = [];
+
+		for (const iteration of this.SplitAudioEmitterPool)
 		{
-			this.scheduler.ScheduleWork({
-				cameraCFrame: camera_part.CFrame.mul(new CFrame(direction.mul(5))),
-				direction: direction,
-				emitter: index,
+			const split_jobs = iteration.map(
+				(directions, index) => this.parallelRaytracingController.Raytrace(
+					index,
+					directions.map(({ Direction: direction, Emitter: emitter }) =>
+					({
+						StartingCFrame: camera_part_cframe,
+						StartingDirection: direction,
+						Emitter: emitter,
+						AudioSources: sources,
+						RaycastParams: this.RaycastParams
+					}))
+				)
+					.then(results =>
+					{
+						results.forEach(result =>
+						{
+							all_results.push(result);
+							times.push(result.ElapsedTime);
+						});
+					})
+			);
 
-				audioSources: sources.map(source => ({
-					emitter_id: source.emitter_id,
-					position: source.instance.Position
-				}))
-			} satisfies AudioRaytraceParams);
-		});
+			await Promise.all(split_jobs);
+		}
 
-		const results = this.scheduler.Work() as AudioRaytraceResult[];
-		results.forEach(result => 
+		for (const result of all_results)
 		{
-			const emitter = this.AudioEmitterPool.get(result.emitter)!.Emitter;
+			const emitter = result.Emitter;
 
-			if (result.audioSource) {
-				const audio_source = this.AudioSources.get(result.audioSource.emitter_id)!.instance.AudioFader;
+			if (!result.SelectedAudioSource)
+			{
+				emitter.AudioFader.Volume = 0;
+				emitter.AudioEqualizer.Wire.SourceInstance = undefined;
+				// emitter.Visible = false;
 
-				emitter.AudioFader.Volume = result.faderVolume;
-
-				emitter.AudioEqualizer.LowGain = result.lowGain;
-				emitter.AudioEqualizer.MidGain = result.midGain;
-				emitter.AudioEqualizer.HighGain = result.highGain;
-
-				emitter.AudioEqualizer.Wire.SourceInstance = audio_source;
-
-				emitter.Visible = true;
-
-				return;
+				continue;
 			}
 
-			emitter.AudioFader.Volume = 0;
-			emitter.AudioEqualizer.Wire.SourceInstance = undefined;
+			const total_distance = result.PathPoints.reduce(
+				(total, point, index) =>
+				{
+					if (index === 0) return total;
 
-			emitter.Visible = false;
-		})
+					return total + point.sub(result.PathPoints[index - 1]!).Magnitude;
+				},
+				0
+			);
+
+			const audio_source = result.SelectedAudioSource;
+			const distance_factor = math.max((total_distance / 300) ** 2, 0.5);
+
+			emitter.AudioFader.Volume = (result.DotProduct) * (0.75 ** result.TotalBounces) / (distance_factor) / (NUM_AUDIO_DIRECTIONS);
+
+			emitter.AudioEqualizer.LowGain = -result.TotalBounces * 10;
+			emitter.AudioEqualizer.MidGain = result.Occluded ? -20 : -result.TotalBounces * 5;
+			emitter.AudioEqualizer.HighGain = result.Occluded ? -80 : 0;
+
+			emitter.AudioEqualizer.Wire.SourceInstance = audio_source.AudioFader;
+
+			// emitter.Visible = true;
+		}
+
+		this.Busy = false;
+
+		// print(
+		// 	[
+		// 		"-----",
+		// 		`Average time: ${times.reduce((total, time) => total + time, 0) / times.size()}s`,
+		// 		`Max time: ${math.max(...times)}s`,
+		// 		`Min time: ${math.min(...times)}s`,
+		// 		`Total time: ${times.reduce((total, time) => total + time, 0)}s`,
+		// 		"-----"
+		// 	]
+		// 		.join("\n")
+		// );
 	}
 }

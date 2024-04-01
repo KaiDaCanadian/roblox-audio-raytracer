@@ -4,6 +4,7 @@
 	"identifiers": {
 		"audio-raytracer:out/client/components/AudioSourceComponent/init@AudioSourceComponent": "client/components/AudioSourceComponent/init@AudioSourceComponent",
 		"audio-raytracer:out/client/controllers/AudioController/init@AudioController": "client/controllers/AudioController/init@AudioController",
+		"audio-raytracer:out/client/controllers/ParallelRaytracingController/init@ParallelRaytracingController": "client/controllers/ParallelRaytracingController/init@ParallelRaytracingController",
 		"audio-raytracer:out/client/controllers/RaytracingController/init@RaytracingController": "client/controllers/RaytracingController/init@RaytracingController"
 	},
 	"metadata": {}
