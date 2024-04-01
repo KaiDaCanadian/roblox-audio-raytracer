@@ -16,7 +16,7 @@ export class ParallelRaytracingController implements OnStart
 	{
 		return new Promise<AudioRaytraceResult[]>((resolve, reject, onCancel) =>
 		{
-			const connections: RBXScriptConnection[] = [];
+			const connections = new Set<RBXScriptConnection>();
 
 			const worker = this.Workers[workerIndex];
 
@@ -30,13 +30,13 @@ export class ParallelRaytracingController implements OnStart
 				connections.forEach(connection => connection.Disconnect());
 			};
 
-			connections.push(worker.OnWorkComplete.Event.Connect(result =>
+			connections.add(worker.OnWorkComplete.Event.Connect(result =>
 			{
 				cleanup();
 				resolve(DecodeAudioRaytraceResultBuffer(result));
 			}));
 
-			connections.push(worker.OnWorkErrored.Event.Connect(err =>
+			connections.add(worker.OnWorkErrored.Event.Connect(err =>
 			{
 				cleanup();
 				reject(err);

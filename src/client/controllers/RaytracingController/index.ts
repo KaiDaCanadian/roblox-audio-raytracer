@@ -277,7 +277,7 @@ export class RaytracingController implements OnStart, OnRender
 				0
 			);
 
-			const distance_factor = math.max((total_distance / 300) ** 2, 0.5);
+			const distance_factor = math.max((total_distance / 150) ** 2, 0.5);
 
 			emitter.AudioFader.Volume = (result.DotProduct) * (0.75 ** result.TotalBounces) / (distance_factor) / (NUM_AUDIO_DIRECTIONS);
 
