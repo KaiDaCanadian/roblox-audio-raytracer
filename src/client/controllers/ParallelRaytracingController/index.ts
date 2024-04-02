@@ -16,7 +16,8 @@ export class ParallelRaytracingController implements OnStart
 	{
 		return new Promise<AudioRaytraceResult[]>((resolve, reject, onCancel) =>
 		{
-			const connections = new Set<RBXScriptConnection>();
+			const connections: RBXScriptConnection[] = [];
+			const cleanup = () => connections.forEach(connection => connection.Disconnect());
 
 			const worker = this.Workers[workerIndex];
 
@@ -25,36 +26,29 @@ export class ParallelRaytracingController implements OnStart
 				throw `Worker at index ${workerIndex} does not exist!`;
 			}
 
-			const cleanup = () =>
-			{
-				connections.forEach(connection => connection.Disconnect());
-			};
-
-			connections.add(worker.OnWorkComplete.Event.Connect(result =>
+			connections.push(worker.OnWorkComplete.Event.Connect(result =>
 			{
 				cleanup();
 				resolve(DecodeAudioRaytraceResultBuffer(result));
 			}));
 
-			connections.add(worker.OnWorkErrored.Event.Connect(err =>
+			connections.push(worker.OnWorkErrored.Event.Connect(err =>
 			{
 				cleanup();
 				reject(err);
 			}));
 
-			onCancel(() =>
-			{
-				cleanup();
-			});
+			onCancel(cleanup);
 
-			const buf = EncodeAudioRaytraceParamsBuffer(audioSources, params);
-
-			worker.OnWorkStarted.Fire(buf, raycastParams);
+			worker.OnWorkStarted.Fire(EncodeAudioRaytraceParamsBuffer(audioSources, params), raycastParams);
 		});
 	}
 
 	public InitializeWorkers(numWorkers: number): void
 	{
+		this.Workers.forEach(worker => worker.Destroy());
+		this.Workers = table.create(numWorkers);
+
 		for (let i = 0; i < numWorkers; ++i)
 		{
 			const worker = ParallelRaytracingController.BASE_ACTOR.Clone();

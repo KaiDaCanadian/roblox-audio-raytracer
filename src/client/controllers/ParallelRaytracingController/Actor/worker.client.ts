@@ -1,7 +1,8 @@
 import { AudioRaytraceParams, AudioRaytraceResult, AudioSource, WorkerActorInstance } from "../types";
 import { DISTANCE_FROM_CAMERA, RAYTRACE_LENGTH, RAYTRACE_MAX_BOUNCE_COUNT, RAYTRACE_SNAP_ANGLE } from "shared/config/AudioRaytraceConfig";
 import { Workspace } from "@rbxts/services";
-import { DecodeAudioRaytraceParamsBuffer, EncodeAudioRaytraceResultBuffer, u16_max } from "../bufferutil";
+import { DecodeAudioRaytraceParamsBuffer, EncodeAudioRaytraceResultBuffer } from "../bufferutil";
+import n from "shared/modules/NumberConstants";
 
 const ACTOR = <WorkerActorInstance> script.GetActor();
 
@@ -73,7 +74,7 @@ function Raytrace(options: AudioRaytraceParams, audioSources: AudioSource[], ray
 			return {
 				PathPoints: path,
 				EmitterIndex: options.EmitterIndex,
-				SelectedAudioSourceIndex: u16_max,
+				SelectedAudioSourceIndex: n.u16_max_n,
 				DotProduct: 0,
 				Occluded: false,
 				TotalBounces: i,
@@ -92,7 +93,7 @@ function Raytrace(options: AudioRaytraceParams, audioSources: AudioSource[], ray
 	return {
 		PathPoints: path,
 		EmitterIndex: options.EmitterIndex,
-		SelectedAudioSourceIndex: u16_max,
+		SelectedAudioSourceIndex: n.u16_max_n,
 		DotProduct: 0,
 		Occluded: false,
 		TotalBounces: RAYTRACE_MAX_BOUNCE_COUNT,

@@ -16,7 +16,7 @@ export class RaytracingController implements OnStart, OnRender
 	public AudioSources: AudioSourceComponent[] = [];
 	public CurrentCamera = Workspace.CurrentCamera;
 
-	public Directions = this.GetDirections(NUM_AUDIO_DIRECTIONS);
+	public Directions: Vector3[] = [];
 
 	public IndexEmitterMap = new Map<number, DirectionAndEmitter>();
 	public EmitterIndexMap = new Map<DirectionAndEmitter, number>();
@@ -82,6 +82,11 @@ export class RaytracingController implements OnStart, OnRender
 		return directions;
 	}
 
+	public InitializeDirections(numPoints: number): void
+	{
+		this.Directions = this.GetDirections(numPoints);
+	}
+
 	public DebugLine(position1: Vector3, position2: Vector3, color: Color3, transparency: number = 0): void
 	{
 		const length = position1.sub(position2).Magnitude;
@@ -138,6 +143,8 @@ export class RaytracingController implements OnStart, OnRender
 
 	public onStart(): void
 	{
+		this.InitializeDirections(NUM_AUDIO_DIRECTIONS);
+
 		this.Directions.forEach((direction, index) =>
 		{
 			const emitter = this.CreateAudioEmitter();
@@ -213,7 +220,6 @@ export class RaytracingController implements OnStart, OnRender
 			.map(([component, index]) => [component.instance.Position, index] as const);
 
 		const all_results: AudioRaytraceResult[] = table.create(NUM_AUDIO_DIRECTIONS);
-		const times: number[] = [];
 
 		for (const iteration of this.SplitAudioEmitterPool)
 		{
@@ -229,14 +235,7 @@ export class RaytracingController implements OnStart, OnRender
 						EmitterIndex: this.EmitterIndexMap.get(direction_and_emitter)!,
 					}))
 				)
-					.then(results =>
-					{
-						results.forEach(result =>
-						{
-							all_results.push(result);
-							times.push(result.ElapsedTime);
-						});
-					})
+					.then(results => results.forEach(result => all_results.push(result)))
 			);
 
 			await Promise.all(split_jobs);
@@ -291,6 +290,8 @@ export class RaytracingController implements OnStart, OnRender
 		}
 
 		this.Busy = false;
+
+		// const times = all_results.map(result => result.ElapsedTime);
 
 		// print(
 		// 	[

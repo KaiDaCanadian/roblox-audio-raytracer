@@ -1,77 +1,64 @@
+import n from "shared/modules/NumberConstants";
 import { AudioRaytraceParams, AudioRaytraceResult, AudioSource } from "./types";
-
-export const f64_size = 8;
-export const u16_size = 2;
-export const u8_size = 1;
-
-export const u16_max = 2 ** (u16_size * 8) - 1;
-
-export const vector3_size = f64_size * 3;
-export const audio_source_size = vector3_size + u16_size;
-export const audio_params_size = vector3_size + vector3_size + u16_size;
 
 export function EncodeAudioRaytraceParamsBuffer(audioSources: AudioSource[], params: AudioRaytraceParams[]): buffer
 {
 	debug.profilebegin("EncodeAudioRaytraceParamsBuffer");
 
 	const buffer_length =
-		u16_size + // audioSources.length
-		audio_source_size * audioSources.size() + // AudioSource[]
-		u16_size + // params.length
-		audio_params_size * params.size(); // AudioRaytraceParams[]
+		n.u16_size_b + // audioSources.length
+		(n.vector3_size_b + n.u16_size_b) * audioSources.size() + // AudioSource[]
+		n.u16_size_b + // params.length
+		(n.vector3_size_b * 2 + n.u16_size_b) * params.size(); // AudioRaytraceParams[]
 
 	const buf = buffer.create(buffer_length);
 	let offset = 0;
 
 	// audioSources.length
 	buffer.writeu16(buf, offset, audioSources.size());
-	offset += u16_size;
+	offset += n.u16_size_b;
 
 	// AudioSource[]
-	for (let i = 0; i < audioSources.size(); ++i)
+	for (const [position, internal_index] of audioSources)
 	{
-		const source = audioSources[i]!;
-
 		// Vector3
-		buffer.writef64(buf, offset, source[0].X);
-		offset += f64_size;
-		buffer.writef64(buf, offset, source[0].Y);
-		offset += f64_size;
-		buffer.writef64(buf, offset, source[0].Z);
-		offset += f64_size;
+		buffer.writef64(buf, offset, position.X);
+		offset += n.f64_size_b;
+		buffer.writef64(buf, offset, position.Y);
+		offset += n.f64_size_b;
+		buffer.writef64(buf, offset, position.Z);
+		offset += n.f64_size_b;
 
 		// index
-		buffer.writeu16(buf, offset, source[1]);
-		offset += u16_size;
+		buffer.writeu16(buf, offset, internal_index);
+		offset += n.u16_size_b;
 	}
 
 	// params.length
 	buffer.writeu16(buf, offset, params.size());
-	offset += u16_size;
+	offset += n.u16_size_b;
 
-	for (let i = 0; i < params.size(); ++i)
+	for (const { StartingPosition, StartingDirection, EmitterIndex } of params)
 	{
-		const param = params[i]!;
-
 		// StartingPosition
-		buffer.writef64(buf, offset, param.StartingPosition.X);
-		offset += f64_size;
-		buffer.writef64(buf, offset, param.StartingPosition.Y);
-		offset += f64_size;
-		buffer.writef64(buf, offset, param.StartingPosition.Z);
-		offset += f64_size;
+		buffer.writef64(buf, offset, StartingPosition.X);
+		offset += n.f64_size_b;
+		buffer.writef64(buf, offset, StartingPosition.Y);
+		offset += n.f64_size_b;
+		buffer.writef64(buf, offset, StartingPosition.Z);
+		offset += n.f64_size_b;
 
 		// StartingDirection
-		buffer.writef64(buf, offset, param.StartingDirection.X);
-		offset += f64_size;
-		buffer.writef64(buf, offset, param.StartingDirection.Y);
-		offset += f64_size;
-		buffer.writef64(buf, offset, param.StartingDirection.Z);
-		offset += f64_size;
+		buffer.writef64(buf, offset, StartingDirection.X);
+		offset += n.f64_size_b;
+		buffer.writef64(buf, offset, StartingDirection.Y);
+		offset += n.f64_size_b;
+		buffer.writef64(buf, offset, StartingDirection.Z);
+		offset += n.f64_size_b;
 
 		// Emitter
-		buffer.writeu16(buf, offset, param.EmitterIndex);
-		offset += u16_size;
+		buffer.writeu16(buf, offset, EmitterIndex);
+		offset += n.u16_size_b;
 	}
 
 	debug.profileend();
@@ -85,57 +72,58 @@ export function DecodeAudioRaytraceParamsBuffer(buf: buffer): LuaTuple<[AudioSou
 
 	let offset = 0;
 
-	const audio_sources: AudioSource[] = [];
-	const params: AudioRaytraceParams[] = [];
-
 	// audioSources.length
 	const audio_sources_length = buffer.readu16(buf, offset);
-	offset += u16_size;
+	offset += n.u16_size_b;
+
+	const audio_sources = table.create<AudioSource>(audio_sources_length);
 
 	// AudioSource[]
 	for (let i = 0; i < audio_sources_length; ++i)
 	{
 		// Vector3
 		const x = buffer.readf64(buf, offset);
-		offset += f64_size;
+		offset += n.f64_size_b;
 		const y = buffer.readf64(buf, offset);
-		offset += f64_size;
+		offset += n.f64_size_b;
 		const z = buffer.readf64(buf, offset);
-		offset += f64_size;
+		offset += n.f64_size_b;
 
 		// index
 		const index = buffer.readu16(buf, offset);
-		offset += u16_size;
+		offset += n.u16_size_b;
 
 		audio_sources.push([new Vector3(x, y, z), index]);
 	}
 
 	// params.length
 	const audio_params_length = buffer.readu16(buf, offset);
-	offset += u16_size;
+	offset += n.u16_size_b;
+
+	const params = table.create<AudioRaytraceParams>(audio_params_length);
 
 	// AudioRaytraceParams[]
 	for (let i = 0; i < audio_params_length; ++i)
 	{
 		// StartingPosition
 		const x1 = buffer.readf64(buf, offset);
-		offset += f64_size;
+		offset += n.f64_size_b;
 		const y1 = buffer.readf64(buf, offset);
-		offset += f64_size;
+		offset += n.f64_size_b;
 		const z1 = buffer.readf64(buf, offset);
-		offset += f64_size;
+		offset += n.f64_size_b;
 
 		// StartingDirection
 		const x2 = buffer.readf64(buf, offset);
-		offset += f64_size;
+		offset += n.f64_size_b;
 		const y2 = buffer.readf64(buf, offset);
-		offset += f64_size;
+		offset += n.f64_size_b;
 		const z2 = buffer.readf64(buf, offset);
-		offset += f64_size;
+		offset += n.f64_size_b;
 
 		// Emitter
 		const emitter = buffer.readu16(buf, offset);
-		offset += u16_size;
+		offset += n.u16_size_b;
 
 		params.push({
 			StartingPosition: new Vector3(x1, y1, z1),
@@ -149,79 +137,75 @@ export function DecodeAudioRaytraceParamsBuffer(buf: buffer): LuaTuple<[AudioSou
 	return $tuple(audio_sources, params);
 }
 
-export function EncodeAudioRaytraceResultBuffer(result: AudioRaytraceResult[]): buffer
+export function EncodeAudioRaytraceResultBuffer(results: AudioRaytraceResult[]): buffer
 {
 	debug.profilebegin("EncodeAudioRaytraceResultBuffer");
 
-	let buffer_length = u16_size; // result.length
+	let buffer_length = n.u16_size_b; // result.length
 
 	// AudioRaytraceResult[]
-	for (const res of result)
+	for (const { PathPoints } of results)
 	{
 		buffer_length +=
-			u8_size + // PathPoints.length
-			vector3_size * res.PathPoints.size() + // PathPoints[]
-			u8_size + // TotalBounces
-			f64_size + // DotProduct
-			u8_size + // Occluded
-			u16_size + // SelectedAudioSourceIndex
-			u16_size + // EmitterIndex
-			f64_size; // ElapsedTime
+			n.u8_size_b + // PathPoints.length
+			n.vector3_size_b * PathPoints.size() + // PathPoints[]
+			n.u8_size_b + // TotalBounces
+			n.f64_size_b + // DotProduct
+			n.u8_size_b + // Occluded
+			n.u16_size_b + // SelectedAudioSourceIndex
+			n.u16_size_b + // EmitterIndex
+			n.f64_size_b; // ElapsedTime
 	}
 
 	const buf = buffer.create(buffer_length);
 	let offset = 0;
 
 	// result.length
-	buffer.writeu16(buf, offset, result.size());
-	offset += u16_size;
+	buffer.writeu16(buf, offset, results.size());
+	offset += n.u16_size_b;
 
 	// AudioRaytraceResult[]
-	for (let i = 0; i < result.size(); ++i)
+	for (const result of results)
 	{
-		const res = result[i]!;
-
 		// PathPoints.length
-		buffer.writeu8(buf, offset, res.PathPoints.size());
-		offset += u8_size;
+		buffer.writeu8(buf, offset, result.PathPoints.size());
+		offset += n.u8_size_b;
 
 		// PathPoints[]
-		for (let j = 0; j < res.PathPoints.size(); ++j)
+		for (const point of result.PathPoints)
 		{
-			const point = res.PathPoints[j]!;
-
 			// Vector3
 			buffer.writef64(buf, offset, point.X);
-			offset += f64_size;
+			offset += n.f64_size_b;
 			buffer.writef64(buf, offset, point.Y);
-			offset += f64_size;
+			offset += n.f64_size_b;
 			buffer.writef64(buf, offset, point.Z);
-			offset += f64_size;
+			offset += n.f64_size_b;
 		}
 
 		// TotalBounces
-		buffer.writeu8(buf, offset, res.TotalBounces);
-		offset += u8_size;
+		buffer.writeu8(buf, offset, result.TotalBounces);
+		offset += n.u8_size_b;
 
 		// DotProduct
-		buffer.writef64(buf, offset, res.DotProduct);
-		offset += f64_size;
+		buffer.writef64(buf, offset, result.DotProduct);
+		offset += n.f64_size_b;
 
 		// Occluded
-		buffer.writeu8(buf, offset, res.Occluded ? 1 : 0);
-		offset += u8_size;
+		buffer.writeu8(buf, offset, result.Occluded ? 1 : 0);
+		offset += n.u8_size_b;
 
 		// SelectedAudioSourceIndex
-		buffer.writeu16(buf, offset, res.SelectedAudioSourceIndex ?? u16_max);
-		offset += u16_size;
+		buffer.writeu16(buf, offset, result.SelectedAudioSourceIndex ?? n.u16_max_n);
+		offset += n.u16_size_b;
 
 		// EmitterIndex
-		buffer.writeu16(buf, offset, res.EmitterIndex);
-		offset += u16_size;
+		buffer.writeu16(buf, offset, result.EmitterIndex);
+		offset += n.u16_size_b;
 
 		// ElapsedTime
-		buffer.writef64(buf, offset, res.ElapsedTime);
-		offset += f64_size;
+		buffer.writef64(buf, offset, result.ElapsedTime);
+		offset += n.f64_size_b;
 	}
 
 	debug.profileend();
@@ -235,65 +219,65 @@ export function DecodeAudioRaytraceResultBuffer(buf: buffer): AudioRaytraceResul
 
 	let offset = 0;
 
-	const results: AudioRaytraceResult[] = [];
-
 	// result.length
 	const result_length = buffer.readu16(buf, offset);
-	offset += u16_size;
+	offset += n.u16_size_b;
+
+	const results = table.create<AudioRaytraceResult>(result_length);
 
 	// AudioRaytraceResult[]
 	for (let i = 0; i < result_length; ++i)
 	{
 		// PathPoints.length
 		const path_length = buffer.readu8(buf, offset);
-		offset += u8_size;
+		offset += n.u8_size_b;
 
-		const path: Vector3[] = [];
+		const path = table.create<Vector3>(path_length);
 
 		// PathPoints[]
 		for (let j = 0; j < path_length; ++j)
 		{
 			// Vector3
 			const x = buffer.readf64(buf, offset);
-			offset += f64_size;
+			offset += n.f64_size_b;
 			const y = buffer.readf64(buf, offset);
-			offset += f64_size;
+			offset += n.f64_size_b;
 			const z = buffer.readf64(buf, offset);
-			offset += f64_size;
+			offset += n.f64_size_b;
 
 			path.push(new Vector3(x, y, z));
 		}
 
 		// TotalBounces
 		const total_bounces = buffer.readu8(buf, offset);
-		offset += u8_size;
+		offset += n.u8_size_b;
 
 		// DotProduct
 		const dot_product = buffer.readf64(buf, offset);
-		offset += f64_size;
+		offset += n.f64_size_b;
 
 		// Occluded
-		const occluded = buffer.readu8(buf, offset) === 1;
-		offset += u8_size;
+		const occluded = buffer.readu8(buf, offset);
+		offset += n.u8_size_b;
 
 		// SelectedAudioSourceIndex
 		const selected_audio_source_index = buffer.readu16(buf, offset);
-		offset += u16_size;
+		offset += n.u16_size_b;
 
 		// EmitterIndex
 		const emitter_index = buffer.readu16(buf, offset);
-		offset += u16_size;
+		offset += n.u16_size_b;
 
 		// ElapsedTime
 		const elapsed_time = buffer.readf64(buf, offset);
-		offset += f64_size;
+		offset += n.f64_size_b;
 
 		results.push({
 			PathPoints: path,
 			TotalBounces: total_bounces,
 			DotProduct: dot_product,
-			Occluded: occluded,
-			SelectedAudioSourceIndex: selected_audio_source_index !== u16_max ? selected_audio_source_index : undefined,
+			Occluded: occluded === 1,
+			SelectedAudioSourceIndex: selected_audio_source_index !== n.u16_max_n ? selected_audio_source_index : undefined,
 			EmitterIndex: emitter_index,
 			ElapsedTime: elapsed_time,
 		});
