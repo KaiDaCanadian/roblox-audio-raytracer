@@ -2,12 +2,12 @@ import { BaseComponent, Component } from "@flamework/components";
 import { OnStart } from "@flamework/core";
 import { HttpService } from "@rbxts/services";
 import { Tags } from "client/types";
-import { AudioSourceComponentAttributes, AudioSourceComponentInstance } from "./types";
+import { DiegeticAudioEmitterAttributes, DiegeticAudioEmitterInstance } from "./types";
 
-@Component({ tag: Tags.AudioSourceComponent })
-export class AudioSourceComponent extends BaseComponent<AudioSourceComponentAttributes, AudioSourceComponentInstance> implements OnStart
+@Component({ tag: Tags.DiegeticAudioEmitter })
+export class DiegeticAudioEmitter extends BaseComponent<DiegeticAudioEmitterAttributes, DiegeticAudioEmitterInstance> implements OnStart
 {
-	public readonly emitter_id: string = HttpService.GenerateGUID(false);
+	public readonly UniqueId = HttpService.GenerateGUID(false);
 
 	public SetAssetId(newAssetId: string): void
 	{

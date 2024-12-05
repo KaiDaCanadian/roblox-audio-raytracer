@@ -1,10 +1,10 @@
-export interface AudioSourceComponentAttributes
+export interface DiegeticAudioEmitterAttributes
 {
 	AssetId: string;
 	RaytracingEnabled: boolean;
 }
 
-export type AudioSourceComponentInstance = BasePart & {
+export type DiegeticAudioEmitterInstance = BasePart & {
 	AudioEmitter: AudioEmitter;
 	AudioEqualizer: AudioEqualizer & {
 		Wire: Wire;

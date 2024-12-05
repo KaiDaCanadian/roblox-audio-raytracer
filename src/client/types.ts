@@ -1,4 +1,4 @@
 export enum Tags
 {
-	AudioSourceComponent = "AudioSourceComponent",
+	DiegeticAudioEmitter = "DiegeticAudioEmitter"
 }

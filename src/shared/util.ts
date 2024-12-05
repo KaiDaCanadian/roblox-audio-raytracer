@@ -12,3 +12,12 @@ export function split_arr<T extends defined[]>(arr: T, chunk_size: number): T[]
 		[]
 	);
 }
+
+export function CreateWireInstance(sourceInstance?: Instance, targetInstance?: Instance, parentTo?: Instance): Wire
+{
+	const wire = new Instance("Wire");
+	wire.SourceInstance = sourceInstance;
+	wire.TargetInstance = targetInstance;
+	wire.Parent = parentTo;
+	return wire;
+}

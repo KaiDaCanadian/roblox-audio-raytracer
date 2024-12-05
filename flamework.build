@@ -1,9 +1,9 @@
 {
 	"version": 1,
-	"flameworkVersion": "1.2.1",
+	"flameworkVersion": "1.2.3",
 	"identifiers": {
-		"audio-raytracer:out/client/components/AudioSourceComponent/init@AudioSourceComponent": "client/components/AudioSourceComponent/init@AudioSourceComponent",
-		"audio-raytracer:out/client/controllers/AudioController/init@AudioController": "client/controllers/AudioController/init@AudioController",
+		"audio-raytracer:out/client/components/DiegeticAudioEmitter/init@DiegeticAudioEmitter": "client/components/DiegeticAudioEmitter/init@DiegeticAudioEmitter",
+		"audio-raytracer:out/client/controllers/DiegeticAudioController/init@DiegeticAudioController": "client/controllers/DiegeticAudioController/init@DiegeticAudioController",
 		"audio-raytracer:out/client/controllers/ParallelRaytracingController/init@ParallelRaytracingController": "client/controllers/ParallelRaytracingController/init@ParallelRaytracingController",
 		"audio-raytracer:out/client/controllers/RaytracingController/init@RaytracingController": "client/controllers/RaytracingController/init@RaytracingController"
 	},

@@ -1,19 +1,57 @@
-import { Controller, Flamework, OnRender, OnStart } from "@flamework/core";
-import { AudioEmitterInstance, DirectionAndEmitter } from "./types";
-import { AudioSourceComponent } from "client/components/AudioSourceComponent";
-import { Players, Workspace } from "@rbxts/services";
-import { DISTANCE_FROM_CAMERA, NUM_AUDIO_DIRECTIONS, RAYTRACE_COUNT_PER_WORKER, RAYTRACE_THREAD_COUNT } from "shared/config/AudioRaytraceConfig";
 import { Components } from "@flamework/components";
+import { Controller, Flamework, OnRender, OnStart } from "@flamework/core";
+import { Players, Workspace } from "@rbxts/services";
+import { DiegeticAudioEmitter } from "client/components/DiegeticAudioEmitter";
+import { DISTANCE_FROM_CAMERA, NUM_AUDIO_DIRECTIONS, RAYTRACE_COUNT_PER_WORKER, RAYTRACE_MAX_BOUNCE_COUNT, RAYTRACE_THREAD_COUNT } from "shared/config/AudioRaytraceConfig";
+import { CreateWireInstance, split_arr } from "shared/util";
 import { ParallelRaytracingController } from "../ParallelRaytracingController";
 import { AudioRaytraceResult } from "../ParallelRaytracingController/types";
-import { split_arr } from "shared/util";
-
-const IsAudioEmitterInstance = Flamework.createGuard<AudioEmitterInstance>();
+import { AudioEmitterInstance, DirectionAndEmitter } from "./types";
 
 @Controller()
 export class RaytracingController implements OnStart, OnRender
 {
-	public AudioSources: AudioSourceComponent[] = [];
+	public static BASE_AUDIO_EMITTER: AudioEmitterInstance;
+
+	static {
+		/* Create a base AudioEmitterInstance to clone from */
+		
+		const IsAudioEmitterInstance = Flamework.createGuard<AudioEmitterInstance>();
+
+		const attachment = new Instance("Attachment");
+		const audio_emitter = new Instance("AudioEmitter", attachment);
+		const audio_fader = new Instance("AudioFader", attachment);
+		const audio_equalizer = new Instance("AudioEqualizer", attachment);
+		const audio_echo = new Instance("AudioEcho", attachment);
+		const debug_sphere = new Instance("SphereHandleAdornment", attachment);
+		debug_sphere.Name = "Debug";
+		debug_sphere.Radius = 0.1;
+		debug_sphere.Transparency = 0.75;
+
+		/* source -> AudioEqualizer -> AudioEcho -> AudioFader -> AudioEmitter */
+
+		// source -> AudioEqualizer
+		CreateWireInstance(undefined, audio_equalizer, audio_equalizer);
+		// AudioEqualizer -> AudioEcho
+		CreateWireInstance(audio_equalizer, audio_echo, audio_echo);
+		// AudioEcho -> AudioFader
+		CreateWireInstance(audio_echo, audio_fader, audio_fader);
+		// AudioFader -> AudioEmitter
+		CreateWireInstance(audio_fader, audio_emitter, audio_emitter);
+
+		audio_echo.DryLevel = -80;
+		audio_echo.WetLevel = 0;
+		audio_echo.Feedback = 0;
+		audio_echo.DelayTime = 0;
+		// TODO: Get rid of this hack once the typedefs are updated
+		(audio_echo as AudioEcho & { RampTime: number; }).RampTime = 0.1;
+
+		assert(IsAudioEmitterInstance(attachment), "Failed to validate AudioEmitterInstance; check your code");
+
+		this.BASE_AUDIO_EMITTER = attachment;
+	}
+
+	public AudioSources: DiegeticAudioEmitter[] = [];
 	public CurrentCamera = Workspace.CurrentCamera;
 
 	public Directions: Vector3[] = [];
@@ -21,7 +59,7 @@ export class RaytracingController implements OnStart, OnRender
 	public IndexEmitterMap = new Map<number, DirectionAndEmitter>();
 	public EmitterIndexMap = new Map<DirectionAndEmitter, number>();
 
-	public AudioSourceIndexMap = new Map<number, AudioSourceComponent>();
+	public AudioSourceIndexMap = new Map<number, DiegeticAudioEmitter>();
 
 	public AudioEmitterPool: DirectionAndEmitter[] = [];
 
@@ -38,7 +76,7 @@ export class RaytracingController implements OnStart, OnRender
 		private parallelRaytracingController: ParallelRaytracingController
 	) { }
 
-	public AddAudioSource(component: AudioSourceComponent): void
+	public AddAudioSource(component: DiegeticAudioEmitter): void
 	{
 		if (this.AudioSources.includes(component)) return;
 
@@ -46,7 +84,7 @@ export class RaytracingController implements OnStart, OnRender
 		this.AudioSourceIndexMap.set(len - 1, component);
 	}
 
-	public RemoveAudioSource(component: AudioSourceComponent): void
+	public RemoveAudioSource(component: DiegeticAudioEmitter): void
 	{
 		this.AudioSources.filter(source => source !== component);
 
@@ -55,7 +93,7 @@ export class RaytracingController implements OnStart, OnRender
 		this.AudioSources.forEach((source, index) => this.AudioSourceIndexMap.set(index, source));
 	}
 
-	public GetAudioSourcesImmutableCopy(): AudioSourceComponent[]
+	public GetAudioSourcesMutableCopy(): DiegeticAudioEmitter[]
 	{
 		return [...this.AudioSources];
 	}
@@ -104,41 +142,7 @@ export class RaytracingController implements OnStart, OnRender
 
 	public CreateAudioEmitter(): AudioEmitterInstance
 	{
-		const attachment = new Instance("Attachment");
-
-		const audio_emitter = new Instance("AudioEmitter", attachment);
-		const audio_fader = new Instance("AudioFader", attachment);
-		const audio_equalizer = new Instance("AudioEqualizer", attachment);
-
-		// source -> AudioEqualizer -> AudioEcho -> AudioFader -> AudioEmitter
-
-		const audio_equalizer_wire = new Instance("Wire", audio_equalizer);
-		audio_equalizer_wire.SourceInstance = undefined;
-		audio_equalizer_wire.TargetInstance = audio_equalizer;
-
-		// const audio_echo_wire = new Instance("Wire", audio_echo);
-		// audio_echo_wire.SourceInstance = audio_equalizer;
-		// audio_echo_wire.TargetInstance = audio_echo;
-
-		const audio_fader_wire = new Instance("Wire", audio_fader);
-		audio_fader_wire.SourceInstance = audio_equalizer;
-		audio_fader_wire.TargetInstance = audio_fader;
-
-		const audio_emitter_wire = new Instance("Wire", audio_emitter);
-		audio_emitter_wire.SourceInstance = audio_fader;
-		audio_emitter_wire.TargetInstance = audio_emitter;
-
-		// audio_echo.DelayTime = 0;
-		// audio_echo.DryLevel = 0;
-		// audio_echo.Feedback = 0;
-		// audio_echo.WetLevel = -80;
-
-		if (!IsAudioEmitterInstance(attachment))
-		{
-			throw "Failed to create AudioEmitter";
-		}
-
-		return attachment;
+		return RaytracingController.BASE_AUDIO_EMITTER.Clone();
 	}
 
 	public onStart(): void
@@ -151,6 +155,8 @@ export class RaytracingController implements OnStart, OnRender
 
 			emitter.CFrame = new CFrame(direction.mul(DISTANCE_FROM_CAMERA));
 			emitter.Parent = this.CameraAttachmentPart;
+			emitter.Debug.Adornee = this.CameraAttachmentPart;
+			emitter.Debug.CFrame = emitter.CFrame;
 
 			const direction_and_emitter: DirectionAndEmitter = {
 				Direction: direction,
@@ -172,9 +178,9 @@ export class RaytracingController implements OnStart, OnRender
 		this.CameraAttachmentPart.Anchored = true;
 		this.CameraAttachmentPart.Parent = this.CurrentCamera;
 
-		this.components.onComponentAdded<AudioSourceComponent>(component => this.AddAudioSource(component));
-		this.components.onComponentRemoved<AudioSourceComponent>(component => this.RemoveAudioSource(component));
-		this.components.getAllComponents<AudioSourceComponent>().forEach(component => this.AddAudioSource(component));
+		this.components.onComponentAdded<DiegeticAudioEmitter>(component => this.AddAudioSource(component));
+		this.components.onComponentRemoved<DiegeticAudioEmitter>(component => this.RemoveAudioSource(component));
+		this.components.getAllComponents<DiegeticAudioEmitter>().forEach(component => this.AddAudioSource(component));
 
 		Workspace.GetPropertyChangedSignal("CurrentCamera").Connect(() =>
 		{
@@ -245,26 +251,20 @@ export class RaytracingController implements OnStart, OnRender
 		{
 			const emitter = this.IndexEmitterMap.get(result.EmitterIndex)?.Emitter;
 
-			if (!emitter)
-			{
-				throw "Emitter not found!";
-			}
+			assert(emitter, "Emitter not found!");
 
 			if (result.SelectedAudioSourceIndex === undefined)
 			{
 				emitter.AudioFader.Volume = 0;
 				emitter.AudioEqualizer.Wire.SourceInstance = undefined;
-				// emitter.Visible = false;
+				emitter.Debug.Visible = false;
 
 				continue;
 			}
 
 			const audio_source = this.AudioSourceIndexMap.get(result.SelectedAudioSourceIndex);
 
-			if (!audio_source)
-			{
-				throw "Audio source not found!";
-			}
+			assert(audio_source, "Audio source not found!");
 
 			const total_distance = result.PathPoints.reduce(
 				(total, point, index) =>
@@ -276,6 +276,8 @@ export class RaytracingController implements OnStart, OnRender
 				0
 			);
 
+			emitter.AudioEcho.DelayTime = total_distance / 2000;
+
 			const distance_factor = math.max((total_distance / 150) ** 2, 0.5);
 
 			emitter.AudioFader.Volume = (result.DotProduct) * (0.75 ** result.TotalBounces) / (distance_factor) / (NUM_AUDIO_DIRECTIONS);
@@ -286,7 +288,9 @@ export class RaytracingController implements OnStart, OnRender
 
 			emitter.AudioEqualizer.Wire.SourceInstance = audio_source.instance.AudioFader;
 
-			// emitter.Visible = true;
+			emitter.Debug.Color3 = Color3.fromHSV(result.TotalBounces / RAYTRACE_MAX_BOUNCE_COUNT, 1, 1);
+			emitter.Debug.Radius = emitter.AudioFader.Volume * 100 * (result.Occluded ? 0.25 : 1);
+			emitter.Debug.Visible = true;
 		}
 
 		this.Busy = false;
